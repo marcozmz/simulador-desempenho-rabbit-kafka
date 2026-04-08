@@ -11,7 +11,7 @@ Projeto de iniciação científica comparando performance de dois sistemas de me
 ├── kafka/
 │   ├── producer.js    # Produtor — envia mensagem com chave para o tópico 'topico_teste'
 │   └── consumer.js    # Consumidor — lê mensagens do tópico desde o início (fromBeginning)
-└── benchmark_rabbitmq_kafka.html  # Simulador interativo de performance
+└── index.html  # Simulador interativo de performance
 ```
 
 ## Pré-requisitos
