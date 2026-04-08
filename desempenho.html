@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Benchmark: RabbitMQ vs Kafka</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e1117;
+    --bg2: #161b25;
+    --bg3: #1e2535;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.13);
+    --text: #e8eaf0;
+    --text2: #8b92a8;
+    --text3: #555e72;
+    --rabbit: #4aa8f2;
+    --rabbit-dim: rgba(74,168,242,0.12);
+    --kafka: #6fcf6f;
+    --kafka-dim: rgba(111,207,111,0.12);
+    --accent: #f0b429;
+    --accent-dim: rgba(240,180,41,0.10);
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page {
+    position: relative;
+    z-index: 1;
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem;
+  }
+
+  /* Header */
+  .page-header {
+    margin-bottom: 2.5rem;
+    border-bottom: 1px solid var(--border2);
+    padding-bottom: 1.5rem;
+  }
+  .page-header .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .page-header h1 {
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.02em;
+    margin-bottom: 6px;
+  }
+  .page-header h1 span.r { color: var(--rabbit); }
+  .page-header h1 span.k { color: var(--kafka); }
+  .page-header p {
+    font-size: 13px;
+    color: var(--text2);
+    line-height: 1.6;
+  }
+  .tag {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    border: 1px solid var(--border2);
+    color: var(--text3);
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  /* Layout */
+  .main-grid { display: grid; grid-template-columns: 300px 1fr; gap: 20px; align-items: start; }
+
+  /* Panels */
+  .panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+  }
+  .panel-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 1rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Slider rows */
+  .slider-group { margin-bottom: 1.1rem; }
+  .slider-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+  .slider-name { font-size: 12px; color: var(--text2); }
+  .slider-value {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 3px;
+    background: var(--bg3);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--bg2);
+    transition: transform 0.1s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+  select {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 12px;
+    padding: 7px 10px;
+    outline: none;
+    cursor: pointer;
+    margin-bottom: 1rem;
+    appearance: none;
+  }
+
+  .run-btn {
+    width: 100%;
+    padding: 11px;
+    background: var(--accent);
+    color: #0e1117;
+    border: none;
+    border-radius: var(--radius);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: opacity 0.15s, transform 0.1s;
+    margin-top: 0.5rem;
+  }
+  .run-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+  .run-btn:active { transform: scale(0.98); }
+  .run-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* Progress */
+  .progress-wrap { margin-top: 10px; height: 2px; background: var(--bg3); border-radius: 1px; overflow: hidden; display: none; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 1px; width: 0%; transition: width 0.08s; }
+
+  /* Right column */
+  .right-col { display: flex; flex-direction: column; gap: 16px; }
+
+  /* Metric cards */
+  .metrics-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .metric-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+  }
+  .metric-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+  }
+  .metric-pair { display: flex; flex-direction: column; gap: 5px; }
+  .metric-line { display: flex; align-items: center; gap: 7px; }
+  .metric-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .metric-dot.r { background: var(--rabbit); }
+  .metric-dot.k { background: var(--kafka); }
+  .metric-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .metric-num.empty { color: var(--text3); }
+
+  /* Charts */
+  .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .chart-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem; }
+  .chart-title { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+  .chart-wrap { position: relative; height: 180px; }
+  .chart-legend { display: flex; gap: 14px; margin-top: 10px; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text2); }
+  .leg-sq { width: 8px; height: 8px; border-radius: 2px; }
+
+  /* Analysis table */
+  .analysis-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+  }
+  td { padding: 8px 10px; font-size: 12px; color: var(--text2); border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { color: var(--text); font-weight: 500; }
+  td.r-val { color: var(--rabbit); font-family: 'IBM Plex Mono', monospace; }
+  td.k-val { color: var(--kafka); font-family: 'IBM Plex Mono', monospace; }
+
+  .badge {
+    display: inline-block;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .badge.r { background: rgba(74,168,242,0.15); color: var(--rabbit); border: 1px solid rgba(74,168,242,0.25); }
+  .badge.k { background: rgba(111,207,111,0.15); color: var(--kafka); border: 1px solid rgba(111,207,111,0.25); }
+  .badge.t { background: rgba(255,255,255,0.05); color: var(--text3); border: 1px solid var(--border); }
+
+  /* Conclusion */
+  .conclusion-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.25rem; }
+  .conclusion-text { font-size: 13px; color: var(--text2); line-height: 1.7; }
+
+  /* Empty state */
+  .empty-hint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 340px;
+    color: var(--text3);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    border: 1px dashed var(--border2);
+    border-radius: var(--radius-lg);
+    flex-direction: column;
+    gap: 8px;
+  }
+  .empty-hint span { font-size: 22px; }
+
+  /* Footer */
+  .page-footer {
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .footer-text { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--text3); }
+
+  /* Print styles */
+  @media print {
+    body { background: white !important; }
+    body::before { display: none; }
+    :root {
+      --bg: white; --bg2: #f5f5f5; --bg3: #e8e8e8;
+      --border: #ddd; --border2: #ccc;
+      --text: #111; --text2: #444; --text3: #888;
+      --rabbit: #1565c0; --kafka: #2e7d32; --accent: #e65100;
+    }
+    .run-btn, .progress-wrap { display: none !important; }
+    .page { max-width: 100%; padding: 1rem; }
+    .main-grid { grid-template-columns: 240px 1fr; }
+  }
+
+  @media (max-width: 768px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .metrics-row { grid-template-columns: 1fr 1fr; }
+    .charts-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="page-header">
+    <div class="eyebrow">Iniciação Científica · Sistemas de Mensageria</div>
+    <h1>Benchmark <span class="r">RabbitMQ</span> vs <span class="k">Kafka</span> <span class="tag">v1.0</span></h1>
+    <p>Simulador de performance baseado nos projetos experimentais com <code>amqplib</code> e <code>kafkajs</code>. Ajuste os parâmetros e rode a simulação para comparar throughput, latência e comportamento sob carga.</p>
+  </div>
+
+  <div class="main-grid">
+
+    <!-- Left: config panel -->
+    <div>
+      <div class="panel" style="margin-bottom: 14px;">
+        <div class="panel-title">Parâmetros do experimento</div>
+
+        <div class="slider-group">
+          <div class="slider-header">
+            <span class="slider-name">Volume de mensagens</span>
+            <span class="slider-value" id="v-msgs">10.000</span>
+          </div>
+          <input type="range" id="s-msgs" min="100" max="100000" step="100" value="10000">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-header">
+            <span class="slider-name">Tamanho do payload</span>
+            <span class="slider-value" id="v-size">512 B</span>
+          </div>
+          <input type="range" id="s-size" min="64" max="65536" step="64" value="512">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-header">
+            <span class="slider-name">Consumidores ativos</span>
+            <span class="slider-value" id="v-cons">1</span>
+          </div>
+          <input type="range" id="s-cons" min="1" max="20" step="1" value="1">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-header">
+            <span class="slider-name">Partições Kafka</span>
+            <span class="slider-value" id="v-parts">1</span>
+          </div>
+          <input type="range" id="s-parts" min="1" max="16" step="1" value="1">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-header">
+            <span class="slider-name">Latência de rede</span>
+            <span class="slider-value" id="v-latency">1 ms</span>
+          </div>
+          <input type="range" id="s-latency" min="0" max="50" step="1" value="1">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-header">
+            <span class="slider-name">Carga do broker</span>
+            <span class="slider-value" id="v-load">20%</span>
+          </div>
+          <input type="range" id="s-load" min="0" max="90" step="5" value="20">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-header">
+            <span class="slider-name">Durabilidade</span>
+            <span class="slider-value" id="v-durable">Off</span>
+          </div>
+          <input type="range" id="s-durable" min="0" max="1" step="1" value="0">
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Cenário de uso</div>
+        <select id="scenario">
+          <option value="default">Uso geral</option>
+          <option value="realtime">Alta frequência / real-time</option>
+          <option value="batch">Processamento em lote</option>
+          <option value="fanout">Fan-out (1 → muitos)</option>
+          <option value="ordered">Ordem garantida</option>
+          <option value="replay">Replay de eventos</option>
+        </select>
+        <button class="run-btn" id="run-btn" onclick="runBenchmark()">▶ Rodar simulação</button>
+        <div class="progress-wrap" id="prog-wrap"><div class="progress-fill" id="prog-fill"></div></div>
+      </div>
+    </div>
+
+    <!-- Right: results -->
+    <div class="right-col">
+
+      <!-- Metrics -->
+      <div class="metrics-row">
+        <div class="metric-card">
+          <div class="metric-label">Throughput msg/s</div>
+          <div class="metric-pair">
+            <div class="metric-line"><div class="metric-dot r"></div><span class="metric-num empty" id="m-thr-r">—</span></div>
+            <div class="metric-line"><div class="metric-dot k"></div><span class="metric-num empty" id="m-thr-k">—</span></div>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Latência p50</div>
+          <div class="metric-pair">
+            <div class="metric-line"><div class="metric-dot r"></div><span class="metric-num empty" id="m-lat-r">—</span></div>
+            <div class="metric-line"><div class="metric-dot k"></div><span class="metric-num empty" id="m-lat-k">—</span></div>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Latência p99</div>
+          <div class="metric-pair">
+            <div class="metric-line"><div class="metric-dot r"></div><span class="metric-num empty" id="m-p99-r">—</span></div>
+            <div class="metric-line"><div class="metric-dot k"></div><span class="metric-num empty" id="m-p99-k">—</span></div>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Tempo total</div>
+          <div class="metric-pair">
+            <div class="metric-line"><div class="metric-dot r"></div><span class="metric-num empty" id="m-time-r">—</span></div>
+            <div class="metric-line"><div class="metric-dot k"></div><span class="metric-num empty" id="m-time-k">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Empty state or charts -->
+      <div id="empty-state" class="empty-hint">
+        <span>⬡</span>
+        Configure os parâmetros e rode a simulação
+      </div>
+
+      <div id="charts-section" style="display:none; display:flex; flex-direction:column; gap:14px;">
+        <div class="charts-row">
+          <div class="chart-panel">
+            <div class="chart-title">Throughput ao longo do tempo (msg/s)</div>
+            <div class="chart-wrap"><canvas id="chart-thr"></canvas></div>
+            <div class="chart-legend">
+              <div class="legend-item"><div class="leg-sq" style="background:var(--rabbit)"></div>RabbitMQ</div>
+              <div class="legend-item"><div class="leg-sq" style="background:var(--kafka)"></div>Kafka</div>
+            </div>
+          </div>
+          <div class="chart-panel">
+            <div class="chart-title">Distribuição de latência por percentil</div>
+            <div class="chart-wrap"><canvas id="chart-lat"></canvas></div>
+            <div class="chart-legend">
+              <div class="legend-item"><div class="leg-sq" style="background:var(--rabbit)"></div>RabbitMQ</div>
+              <div class="legend-item"><div class="leg-sq" style="background:var(--kafka)"></div>Kafka</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="analysis-panel">
+          <div class="panel-title">Tabela comparativa</div>
+          <table>
+            <thead>
+              <tr><th>Métrica</th><th>RabbitMQ</th><th>Kafka</th><th>Melhor</th></tr>
+            </thead>
+            <tbody id="analysis-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="conclusion-panel">
+          <div class="panel-title">Análise do cenário</div>
+          <p class="conclusion-text" id="conclusion-text"></p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span class="footer-text">Iniciação Científica · Sistemas de Mensageria Distribuída</span>
+    <span class="footer-text" id="timestamp"></span>
+  </div>
+</div>
+
+<script>
+document.getElementById('timestamp').textContent = new Date().toLocaleDateString('pt-BR', { year:'numeric', month:'long', day:'numeric' });
+
+const sliders = [
+  { id: 's-msgs',    vid: 'v-msgs',    fmt: v => Number(v).toLocaleString('pt-BR') },
+  { id: 's-size',    vid: 'v-size',    fmt: v => v >= 1024 ? (v/1024).toFixed(0)+' KB' : v+' B' },
+  { id: 's-cons',    vid: 'v-cons',    fmt: v => v },
+  { id: 's-parts',   vid: 'v-parts',   fmt: v => v },
+  { id: 's-latency', vid: 'v-latency', fmt: v => v+' ms' },
+  { id: 's-load',    vid: 'v-load',    fmt: v => v+'%' },
+  { id: 's-durable', vid: 'v-durable', fmt: v => v == 1 ? 'On' : 'Off' },
+];
+sliders.forEach(s => {
+  const el = document.getElementById(s.id);
+  el.addEventListener('input', () => document.getElementById(s.vid).textContent = s.fmt(el.value));
+});
+
+function getParams() {
+  return {
+    msgs:      +document.getElementById('s-msgs').value,
+    size:      +document.getElementById('s-size').value,
+    consumers: +document.getElementById('s-cons').value,
+    partitions:+document.getElementById('s-parts').value,
+    latency:   +document.getElementById('s-latency').value,
+    load:      +document.getElementById('s-load').value / 100,
+    durable:   +document.getElementById('s-durable').value,
+    scenario:  document.getElementById('scenario').value,
+  };
+}
+
+function simulate(p) {
+  const loadPenalty = 1 + p.load * 1.8;
+  const latBase     = Math.max(0.5, p.latency);
+  const sizeFactor  = 1 + Math.log2(p.size / 512) * 0.15;
+
+  // RabbitMQ
+  let rBase = 55000 / sizeFactor / loadPenalty;
+  rBase *= (1 + (p.consumers - 1) * 0.6);
+  if (p.durable)    rBase *= 0.65;
+  if (p.msgs > 50000) rBase *= 0.82;
+  const rThr   = Math.round(rBase   * (1 + (Math.random()-.5)*.06));
+  const rLat50 = +((latBase + 0.8 * loadPenalty * sizeFactor + (p.durable ? 1.2 : 0))).toFixed(1);
+  const rLat99 = +(rLat50 * (2.5 + p.load * 3)).toFixed(1);
+  const rTime  = +(p.msgs / rThr).toFixed(2);
+
+  // Kafka
+  let kBase = 42000 / sizeFactor / loadPenalty;
+  kBase *= (1 + (p.partitions - 1) * 0.85);
+  kBase *= (1 + Math.log2(p.msgs / 1000) * 0.12);
+  if (p.msgs < 1000) kBase *= 0.5;
+  const kThr   = Math.round(kBase   * (1 + (Math.random()-.5)*.06));
+  const kLat50 = +((latBase + 3.5 * loadPenalty * sizeFactor)).toFixed(1);
+  const kLat99 = +(kLat50 * (1.8 + p.load * 1.5)).toFixed(1);
+  const kTime  = +(p.msgs / kThr).toFixed(2);
+
+  // Time series (10 pontos)
+  const rSeries = Array.from({length:10}, (_,i) => {
+    const ramp = Math.min(1, (i+1)/3);
+    return Math.round(rThr * ramp * (.92 + Math.random()*.16));
+  });
+  const kSeries = Array.from({length:10}, (_,i) => {
+    const ramp = Math.min(1, (i+1)/4);
+    return Math.round(kThr * ramp * (.88 + Math.random()*.24));
+  });
+
+  const pcts      = ['p10','p25','p50','p75','p90','p99'];
+  const rLatDist  = [rLat50*.4, rLat50*.7, rLat50, rLat50*1.4, rLat50*1.9, rLat99];
+  const kLatDist  = [kLat50*.6, kLat50*.8, kLat50, kLat50*1.2, kLat50*1.5, kLat99];
+
+  return { rThr, kThr, rLat50, kLat50, rLat99, kLat99, rTime, kTime, rSeries, kSeries, pcts, rLatDist, kLatDist };
+}
+
+function winner(rVal, kVal, lowerBetter) {
+  const rWins = lowerBetter ? rVal < kVal : rVal > kVal;
+  const kWins = lowerBetter ? kVal < rVal : kVal > rVal;
+  if (rWins) return '<span class="badge r">RabbitMQ</span>';
+  if (kWins) return '<span class="badge k">Kafka</span>';
+  return '<span class="badge t">Empate</span>';
+}
+
+const conclusions = {
+  default:  (p,r) => `Com ${p.msgs.toLocaleString('pt-BR')} mensagens de ${p.size}B, RabbitMQ registrou latência p50 de ${r.rLat50}ms contra ${r.kLat50}ms do Kafka. Em throughput, ${r.kThr > r.rThr ? 'Kafka superou RabbitMQ' : 'RabbitMQ superou Kafka'} (${Math.max(r.rThr,r.kThr).toLocaleString('pt-BR')} vs ${Math.min(r.rThr,r.kThr).toLocaleString('pt-BR')} msg/s). Para uso geral com volume moderado, RabbitMQ tende a ser mais simples de operar e oferece menor latência em cargas menores.`,
+  realtime: (p,r) => `Em cenários real-time, a latência p50 do RabbitMQ (${r.rLat50}ms) se manteve abaixo do Kafka (${r.kLat50}ms). Isso reflete o modelo push do AMQP frente ao modelo pull com lote do Kafka. Para aplicações que exigem resposta sub-milissegundo por mensagem individual, RabbitMQ costuma ser preferível.`,
+  batch:    (p,r) => `Para processamento em lote com ${p.msgs.toLocaleString('pt-BR')} mensagens, ${r.kThr > r.rThr ? 'Kafka superou RabbitMQ' : 'RabbitMQ superou Kafka'} em throughput total. O Kafka é projetado para esse padrão: seu modelo de log append-only e a compactação de lotes reduzem overhead de I/O em volumes altos.`,
+  fanout:   (p,r) => `No padrão fan-out com ${p.consumers} consumidores, RabbitMQ tem suporte nativo via exchanges do tipo fanout/topic (como no seu send.js). O Kafka requer consumer groups distintos, com custo de rebalanceamento. Com volumes maiores, o Kafka tende a compensar esse overhead.`,
+  ordered:  (p,r) => `Ordem garantida: RabbitMQ mantém ordem FIFO por fila (seu receive.js já usa channel.ack). O Kafka garante ordem por partição — você configurou ${p.partitions} partição(ões). Com 1 partição a ordem é total, mas perde-se paralelismo. Múltiplas partições permitem throughput maior com ordem por chave de mensagem (como key: String(mensagem.id) no seu producer.js).`,
+  replay:   (p,r) => `Replay de eventos é exclusivo do Kafka: as mensagens persistem no log pelo tempo configurado (retention.ms). No seu consumer.js, fromBeginning: true já demonstra essa capacidade. O RabbitMQ remove a mensagem após o channel.ack (como no receive.js). Para event sourcing ou auditoria na IC, o Kafka é a arquitetura correta.`,
+};
+
+let thrChart = null, latChart = null;
+
+function runBenchmark() {
+  const btn  = document.getElementById('run-btn');
+  const wrap = document.getElementById('prog-wrap');
+  const fill = document.getElementById('prog-fill');
+  btn.disabled = true;
+  wrap.style.display = 'block';
+  fill.style.width = '0%';
+
+  let pct = 0;
+  const iv = setInterval(() => {
+    pct = Math.min(90, pct + Math.random() * 20);
+    fill.style.width = Math.round(pct) + '%';
+  }, 70);
+
+  setTimeout(() => {
+    clearInterval(iv);
+    fill.style.width = '100%';
+
+    const p = getParams();
+    const r = simulate(p);
+
+    // Metrics
+    const setM = (id, val, unit) => {
+      const el = document.getElementById(id);
+      el.textContent = val + (unit||'');
+      el.classList.remove('empty');
+    };
+    setM('m-thr-r', r.rThr.toLocaleString('pt-BR'));
+    setM('m-thr-k', r.kThr.toLocaleString('pt-BR'));
+    setM('m-lat-r', r.rLat50, ' ms');
+    setM('m-lat-k', r.kLat50, ' ms');
+    setM('m-p99-r', r.rLat99, ' ms');
+    setM('m-p99-k', r.kLat99, ' ms');
+    setM('m-time-r', r.rTime, ' s');
+    setM('m-time-k', r.kTime, ' s');
+
+    // Show charts
+    document.getElementById('empty-state').style.display  = 'none';
+    document.getElementById('charts-section').style.display = 'flex';
+
+    // Throughput chart
+    const thrCtx = document.getElementById('chart-thr').getContext('2d');
+    if (thrChart) thrChart.destroy();
+    thrChart = new Chart(thrCtx, {
+      type: 'line',
+      data: {
+        labels: ['t1','t2','t3','t4','t5','t6','t7','t8','t9','t10'],
+        datasets: [
+          { label:'RabbitMQ', data: r.rSeries, borderColor:'#4aa8f2', backgroundColor:'rgba(74,168,242,0.10)', tension:0.38, pointRadius:2, fill:true, borderWidth:2 },
+          { label:'Kafka',    data: r.kSeries, borderColor:'#6fcf6f', backgroundColor:'rgba(111,207,111,0.10)', tension:0.38, pointRadius:2, fill:true, borderWidth:2 },
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ display:false } },
+        scales:{
+          x:{ ticks:{ color:'#555e72', font:{size:10} }, grid:{ color:'rgba(255,255,255,0.04)' } },
+          y:{ ticks:{ color:'#555e72', font:{size:10}, callback: v => v>=1000?(v/1000).toFixed(0)+'k':v }, grid:{ color:'rgba(255,255,255,0.04)' } }
+        }
+      }
+    });
+
+    // Latency chart
+    const latCtx = document.getElementById('chart-lat').getContext('2d');
+    if (latChart) latChart.destroy();
+    latChart = new Chart(latCtx, {
+      type:'bar',
+      data:{
+        labels: r.pcts,
+        datasets:[
+          { label:'RabbitMQ', data: r.rLatDist.map(v=>+v.toFixed(1)), backgroundColor:'rgba(74,168,242,0.75)' },
+          { label:'Kafka',    data: r.kLatDist.map(v=>+v.toFixed(1)), backgroundColor:'rgba(111,207,111,0.75)' },
+        ]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ display:false } },
+        scales:{
+          x:{ ticks:{ color:'#555e72', font:{size:10} }, grid:{ display:false } },
+          y:{ ticks:{ color:'#555e72', font:{size:10}, callback: v=>v+'ms' }, grid:{ color:'rgba(255,255,255,0.04)' } }
+        }
+      }
+    });
+
+    // Analysis table
+    const rows = [
+      ['Throughput (msg/s)', r.rThr.toLocaleString('pt-BR'), r.kThr.toLocaleString('pt-BR'), winner(r.rThr,r.kThr,false)],
+      ['Latência p50 (ms)',  r.rLat50, r.kLat50, winner(r.rLat50,r.kLat50,true)],
+      ['Latência p99 (ms)',  r.rLat99, r.kLat99, winner(r.rLat99,r.kLat99,true)],
+      ['Tempo total (s)',    r.rTime,  r.kTime,  winner(r.rTime,r.kTime,true)],
+      ['Replay de eventos', 'Não (ACK remove)', 'Sim (log persistente)', '<span class="badge k">Kafka</span>'],
+      ['Setup simples',     'Sim (amqplib)',     'Moderado (kafkajs)',    '<span class="badge r">RabbitMQ</span>'],
+    ];
+    document.getElementById('analysis-tbody').innerHTML = rows.map(([m,rv,kv,w]) =>
+      `<tr><td>${m}</td><td class="r-val">${rv}</td><td class="k-val">${kv}</td><td>${w}</td></tr>`
+    ).join('');
+
+    // Conclusion
+    const fn = conclusions[p.scenario] || conclusions.default;
+    document.getElementById('conclusion-text').textContent = fn(p,r);
+
+    btn.disabled = false;
+    wrap.style.display = 'none';
+  }, 900);
+}
+</script>
+</body>
+</html>
